@@ -1,66 +1,78 @@
 #![allow(warnings, unused)]
 
+use specs::prelude::*;
 use specs::{
-    Component, VecStorage, World, WorldExt, Builder,
+    Component, VecStorage, World, WorldExt, Builder, Read,
     ReadStorage, WriteStorage, System, RunNow, DispatcherBuilder,
+    Entities, LazyUpdate, NullStorage,
 };
-struct HelloWorld;
-struct UpdatePos;
-
-#[derive(Debug)]
-struct Position {
+#[derive(Component, Debug)]
+#[storage(VecStorage)]
+pub struct Position {
     x: f32,
     y: f32,
 }
-#[derive(Debug)]
-struct Velocity {
+#[derive(Component, Debug)]
+#[storage(VecStorage)]
+pub struct Velocity {
     x: f32,
     y: f32,
 }
-impl Component for Position { type Storage = VecStorage<Self>; }
-impl Component for Velocity{ type Storage = VecStorage<Self>; }
-impl<'a> System<'a> for HelloWorld {
-    type SystemData = ReadStorage<'a, Position>;
-    fn run (&mut self, data: Self::SystemData) {
-        use specs::Join;
-        for pos in data.join() {
-            print!("\nHello, {:?}\n", &pos);
-        }
-    }
+#[derive(SystemData)]
+pub struct SystemDataRead<'a> {
+    positions: ReadStorage<'a, Position>,
+    velocities: ReadStorage<'a, Velocity>,
 }
-impl<'a> System<'a> for UpdatePos {
-    type SystemData = (ReadStorage<'a, Velocity>,
-                       WriteStorage<'a, Position>);
-    fn run(&mut self, (vel, mut pos): Self::SystemData) {
-        use specs::Join;
-        for (vel, pos) in (&vel, &mut pos).join() {
-            pos.x += vel.x * 0.05;
-            pos.y += vel.y * 0.05;
-        }
-    }
+#[derive(SystemData)]
+pub struct SystemDataWrite<'a> {
+    positions: WriteStorage<'a, Position>,
+    velocities: WriteStorage<'a, Velocity>,
 }
+struct GameSystem;
+impl<'a> System<'a> for GameSystem {
+    type SystemData = SystemDataRead<'a>;
 
+    fn run(&mut self, data: Self::SystemData) {
+        use specs::Join;
+
+        for vel in data.velocities.join() {
+            print!("\nJoining!\n");
+            print!("\ndata? {}\n", vel.x);
+        }
+    }
+}
+struct GameSystemWrite;
+impl<'a> System<'a> for GameSystemWrite {
+    type SystemData = (
+        WriteStorage<'a, Position>,
+        WriteStorage<'a, Velocity>
+    );
+//    type SystemData = SystemDataWrite<'a>;
+    fn run(&mut self, (pos, mut vel): Self::SystemData) {
+        use specs::Join;
+        for (pos, vel) in (&pos, &mut vel).join() {
+            print!("\nChanging velocity!\n");
+            vel.x += 1.0;
+            vel.y += 1.0;
+        }
+    }
+}
 fn main() {
     let mut world = World::new();
-//    let mut hello_world = HelloWorld;
     world.register::<Position>();
     world.register::<Velocity>();
 
-    world.create_entity()
-        .with(Position {x: 4.0, y: 7.0})
-        .build();
-    world.create_entity()
-        .with(Position {x: 2.0, y: 5.0})
-        .with(Velocity {x: 0.1, y: 0.2})
+    let mut dispatcher = DispatcherBuilder::new()
+        .with(GameSystem, "g_sys", &[g_sys_w])
+        .with(GameSystemWrite, "g_sys_w", &[])
         .build();
 
-    let mut dispatcher = DispatcherBuilder::new()
-        .with(HelloWorld, "hello_world", &[])
-        .with(UpdatePos, "update_pos", &["hello_world"])
-        .with(HelloWorld, "hello_updated", &["update_pos"])
+    let ball = world.create_entity()
+        .with(Position {x:4.0, y:7.0})
+        .with(Velocity {x:99.0, y:99.0})
         .build();
+
     dispatcher.dispatch(&mut world);
 
-//    hello_world.run_now(&world);
     world.maintain();
 }
